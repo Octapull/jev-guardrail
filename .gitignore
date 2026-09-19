@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+.jevguard/
+bin/
+coverage.out
+*.test
+.DS_Store
