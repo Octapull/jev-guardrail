@@ -10,6 +10,25 @@ Bu ilk çalışan sürüm CLI, Go kütüphanesi, `net/http` middleware, metin ta
 Chat Completions proxy, altı politika, yerel bütçe sayacı ve benchmark içerir.
 Gerçek model doğruluğu veya 100 ms gecikme garantisi vermez.
 
+## Süre farkını izle
+
+![Guardrail süre karşılaştırması animasyonu](docs/assets/guardrail-latency.gif)
+
+[Etkileşimli animasyon](docs/guardrail-zaman-farki.html) ·
+[Kaynaklar, ölçüm koşulları ve sınırlar](docs/latency-research-2026-09-19.md)
+
+GIF bu README içinde oynar. Etkileşimli sürüm için HTML dosyasını GitHub'dan
+indirip tarayıcıda açın; GitHub dosya görünümü JavaScript çalıştırmaz.
+HTML bağımsızdır ve API anahtarı gerektirmez. İlk grafik yayımlanmış p50
+ölçümlerini, ikinci grafik açık varsayımlı bir proxy senaryosunu gösterir.
+Animasyon yeni API çağrısı yapmaz.
+
+GIF'i yeniden üretmek için Pillow kurulu Python ile
+`python3 scripts/render_animation.py` çalıştırın.
+Düzenlenebilir etkileşimli kaynak
+`docs/animation/guardrail-zaman-farki.fragment.html` içindedir; tam tarayıcı sürümü
+`docs/guardrail-zaman-farki.html` olarak repoya dahil edilmiştir.
+
 ## Başlat
 
 Go 1.24+; macOS veya Linux. Windows için WSL kullanın; bütçe kilidi Unix `flock` kullanır.

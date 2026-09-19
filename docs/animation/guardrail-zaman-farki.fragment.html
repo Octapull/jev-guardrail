@@ -1,0 +1,187 @@
+<div id="jev-latency-explainer">
+  <div class="viz-row">
+    <h2>Guardrail ne kadar bekletiyor?</h2>
+    <button type="button" class="btn btn-primary" data-play>Animasyonu oynat</button>
+  </div>
+  <div class="text-small" data-status aria-live="polite">19 Eylül 2026 · Ölçüm ve senaryo ayrı gösterilir</div>
+
+  <section aria-labelledby="jev-measured-title">
+    <h3 id="jev-measured-title">1. Aynı deneyde tek karar</h3>
+    <div class="text-small">WotAI · 150 metin · yayımlanmış p50 · güvenlik testi değil</div>
+    <div data-chart="measured"></div>
+    <div class="text-small">Jev: Haiku’ya göre 176 ms (%28), Sonnet’e göre 1.219 ms (%73) daha az bekleme.</div>
+    <a class="text-small" href="https://wotai.co/blog/typesafe-jev-vs-claude-haiku-tested" target="_blank" rel="noreferrer">Deneyi yapan kişinin raporu ↗</a>
+  </section>
+
+  <section aria-labelledby="jev-flow-title">
+    <h3 id="jev-flow-title">2. Bizim proxy’de kullanıcıya yansıması</h3>
+    <div class="text-small">Örnek senaryo · güvenli istek · giriş + çıkış kontrolü · önbelleksiz</div>
+    <div class="viz-controls">
+      <label class="form-label">Ana modelin tam cevap süresi: <span class="tabular-nums" data-generation-label>3,0 sn</span> <span class="text-small">(varsayım)</span>
+        <input data-generation class="form-range" type="range" min="1" max="8" step="0.5" value="3" aria-label="Ana modelin varsayımsal tam cevap süresi, saniye">
+      </label>
+    </div>
+    <div class="viz-row text-small" aria-label="Aşama renkleri">
+      <span><span class="swatch guard-swatch"></span> Güvenlik kontrolü</span>
+      <span><span class="swatch generation-swatch"></span> Cevap üretimi</span>
+    </div>
+    <div data-chart="flow"></div>
+    <div class="text-small">Jev/kontrol: 797 ms — bizdeki 4 farklı çağrının ortalaması; LLM hakem/kontrol: 1.500 ms — varsayım.</div>
+    <div class="text-small tabular-nums" data-gain aria-live="polite"></div>
+  </section>
+
+  <div class="text-small">Özel guardrail karşı örneği: Lakera kısa metinde &lt;40 ms bildiriyor; sağlayıcı beyanı, bu deneylerle eşit koşul değil. <a href="https://www.lakera.ai/blog/lakera-guard-fall-25-adaptive-at-scale" target="_blank" rel="noreferrer">Kaynak ↗</a></div>
+  <div class="sr-only">Animasyon yalnızca süreyi karşılaştırır. Daha hızlı olmak daha güvenli olmak anlamına gelmez. İkinci çizim ölçülmüş bir uçtan uca benchmark değildir.</div>
+</div>
+<style>
+  #jev-latency-explainer { color:var(--foreground); }
+  #jev-latency-explainer section { margin:22px 0; }
+  #jev-latency-explainer h2 { margin:0; }
+  #jev-latency-explainer h3 { margin:0 0 5px; }
+  #jev-latency-explainer [data-status] { margin-top:8px; }
+  #jev-latency-explainer [data-chart] { width:100%; margin:8px 0; }
+  #jev-latency-explainer .latency-chart { display:block; width:100%; overflow:visible; }
+  #jev-latency-explainer .latency-chart text { fill:var(--foreground); font-size:12px; font-weight:400; }
+  #jev-latency-explainer .latency-chart .frame,
+  #jev-latency-explainer .latency-chart .tick { stroke:var(--border); stroke-width:1; fill:none; }
+  #jev-latency-explainer .latency-chart .track { fill:var(--muted); opacity:0.35; }
+  #jev-latency-explainer .latency-chart .rail { fill:var(--viz-series-1); }
+  #jev-latency-explainer .latency-chart .generation { fill:var(--viz-series-2); }
+  #jev-latency-explainer .latency-chart .reference { fill:var(--viz-series-3); }
+  #jev-latency-explainer .latency-chart .cursor { stroke:var(--foreground); stroke-width:1; opacity:0.6; }
+  #jev-latency-explainer .latency-chart .progress-marker { fill:var(--foreground); }
+  #jev-latency-explainer .swatch { display:inline-block; width:12px; height:8px; margin-right:4px; }
+  #jev-latency-explainer .guard-swatch { background:var(--viz-series-1); }
+  #jev-latency-explainer .generation-swatch { background:var(--viz-series-2); }
+  #jev-latency-explainer [data-gain] { margin-top:8px; }
+</style>
+<script>
+(() => {
+  const root = document.getElementById("jev-latency-explainer");
+  const ns = "http://www.w3.org/2000/svg";
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const meanJev = 0.7970325;
+  const play = root.querySelector("[data-play]");
+  const status = root.querySelector("[data-status]");
+  const input = root.querySelector("[data-generation]");
+  const format = (n, digits=2) => n.toLocaleString("tr-TR", {minimumFractionDigits:digits,maximumFractionDigits:digits});
+  let charts = [], frame = 0, running = false, start = 0;
+  function node(tag, attrs, text) {
+    const e = document.createElementNS(ns,tag);
+    Object.entries(attrs || {}).forEach(([k,v])=>e.setAttribute(k,v));
+    if (text !== undefined) e.textContent=text;
+    return e;
+  }
+  function makeChart(host, rows, kind) {
+    const width = Math.max(280,host.getBoundingClientRect().width);
+    const left = 64, right = 14, top = 14, step = 66;
+    const bottom = top + rows.length*step + 7, height = bottom+48;
+    const total = Math.max(...rows.map(r=>r.segments.reduce((s,p)=>s+p.duration,0)));
+    const domain = total*1.08;
+    const plotWidth = width-left-right;
+    const x = value=>left+plotWidth*value/domain;
+    const svg=node("svg",{class:"latency-chart",viewBox:"0 0 "+width+" "+height,role:"img"});
+    svg.append(node("title",{},kind==="measured" ? "Yayımlanmış medyan karar gecikmeleri" : "Varsayımsal tam yanıt akışı"));
+    svg.append(node("desc",{},rows.map(r=>r.label+": "+format(r.segments.reduce((s,p)=>s+p.duration,0),3)+" saniye").join(". ")));
+    svg.append(node("rect",{"data-chart-frame":"",class:"frame",x:left,y:top,width:plotWidth,height:bottom-top}));
+    const count=width<440?3:4;
+    for(let i=0;i<count;i++){
+      const value=domain*i/(count-1), xx=x(value);
+      svg.append(node("line",{class:"tick",x1:xx,x2:xx,y1:bottom,y2:bottom+4}));
+      svg.append(node("text",{x:xx,y:bottom+20,"text-anchor":i===0?"start":i===count-1?"end":"middle"},format(value,1)));
+    }
+    svg.append(node("text",{class:"axis-title","data-axis":"x",x:left+plotWidth/2,y:height-4,"text-anchor":"middle"},"Geçen süre (sn)"));
+    const axisY=top+(bottom-top)/2;
+    svg.append(node("text",{class:"axis-title","data-axis":"y",x:13,y:axisY,"text-anchor":"middle",transform:"rotate(-90 13 "+axisY+")"},kind==="measured"?"Model":"Akış"));
+    const marks=[];
+    rows.forEach((row,i)=>{
+      const y=top+i*step;
+      const sum=row.segments.reduce((s,p)=>s+p.duration,0);
+      const title=node("text",{x:left+8,y:y+19},row.label);
+      const value=node("text",{x:width-right-7,y:y+37,"text-anchor":"end",class:"tabular-nums"},format(sum,3)+" sn");
+      svg.append(title,value);
+      svg.append(node("rect",{class:"track",x:left+8,y:y+43,width:plotWidth-16,height:12}));
+      let offset=0;
+      row.segments.forEach(seg=>{
+        const mark=node("rect",{class:seg.cls,x:x(offset),y:y+43,width:x(offset+seg.duration)-x(offset),height:12,"data-tooltip":seg.name+": "+format(seg.duration,3)+" sn"});
+        svg.append(mark);
+        marks.push({mark,offset,duration:seg.duration});
+        offset+=seg.duration;
+      });
+    });
+    const cursor=node("line",{class:"cursor",x1:left,x2:left,y1:top,y2:bottom,visibility:"hidden"});
+    svg.append(cursor);
+    host.replaceChildren(svg);
+    // Labels are measured after layout; long model labels get their own line above values.
+    Array.from(svg.querySelectorAll("text")).forEach(label=>{
+      const box=label.getBBox();
+      if(box.x+box.width>width-2) label.setAttribute("text-anchor","end");
+    });
+    return {svg,total,domain,x,marks,cursor};
+  }
+  function paint(elapsed) {
+    charts.forEach(chart=>{
+      chart.marks.forEach(({mark,offset,duration})=>{
+        const shown=elapsed===null?duration:Math.max(0,Math.min(duration,elapsed-offset));
+        mark.setAttribute("width",chart.x(offset+shown)-chart.x(offset));
+      });
+      chart.cursor.setAttribute("visibility",elapsed===null || elapsed>chart.total?"hidden":"visible");
+      if(elapsed!==null){
+        chart.cursor.setAttribute("x1",chart.x(Math.min(elapsed,chart.total)));
+        chart.cursor.setAttribute("x2",chart.x(Math.min(elapsed,chart.total)));
+      }
+    });
+  }
+  function halt(){
+    cancelAnimationFrame(frame);running=false;play.textContent="Animasyonu oynat";paint(null);
+  }
+  function draw(){
+    halt();
+    const generation=Number(input.value);
+    root.querySelector("[data-generation-label]").textContent=format(generation,1)+" sn";
+    charts=[
+      makeChart(root.querySelector('[data-chart="measured"]'),[
+        {label:"Jev",segments:[{name:"Tek karar",duration:.455,cls:"rail"}]},
+        {label:"Claude Haiku 4.5",segments:[{name:"Tek karar",duration:.631,cls:"reference"}]},
+        {label:"Claude Sonnet 5",segments:[{name:"Tek karar",duration:1.674,cls:"reference"}]}
+      ],"measured"),
+      makeChart(root.querySelector('[data-chart="flow"]'),[
+        {label:"Kontrolsüz referans",segments:[{name:"Cevap üretimi · varsayım",duration:generation,cls:"generation"}]},
+        {label:"Jev · örnek ortalaması",segments:[
+          {name:"Giriş kontrolü · tahmin",duration:meanJev,cls:"rail"},
+          {name:"Cevap üretimi · varsayım",duration:generation,cls:"generation"},
+          {name:"Çıkış kontrolü · tahmin",duration:meanJev,cls:"rail"}]},
+        {label:"LLM hakem · varsayım",segments:[
+          {name:"Giriş kontrolü · varsayım",duration:1.5,cls:"rail"},
+          {name:"Cevap üretimi · varsayım",duration:generation,cls:"generation"},
+          {name:"Çıkış kontrolü · varsayım",duration:1.5,cls:"rail"}]}
+      ],"flow")
+    ];
+    const saving=3-2*meanJev, percent=100*saving/(generation+3);
+    root.querySelector("[data-gain]").textContent="Bu senaryoda LLM hakeme göre kazanç: "+format(saving)+" sn · %"+format(percent,1)+" daha kısa toplam süre.";
+    paint(null);
+    status.textContent="Süreler gerçek zaman ölçeğinde oynatılır · İkinci çizim senaryo hesabıdır";
+  }
+  play.addEventListener("click",()=>{
+    if(running){halt();status.textContent="Oynatma durduruldu; tam süreler gösteriliyor.";return;}
+    if(reduced.matches){paint(null);status.textContent="Azaltılmış hareket tercihi açık; tam süreler gösteriliyor.";return;}
+    running=true;play.textContent="Durdur";start=performance.now();
+    status.textContent="Oynatılıyor · 1 saniye animasyon = 1 saniye bekleme";
+    function tick(now){
+      if(!root.isConnected)return;
+      const elapsed=(now-start)/1000;paint(elapsed);
+      if(elapsed<Math.max(...charts.map(c=>c.total))){frame=requestAnimationFrame(tick);}
+      else{halt();status.textContent="Tamamlandı · Güvenlik kalitesi bu animasyonda ölçülmüyor.";play.textContent="Yeniden oynat";}
+    }
+    paint(0);frame=requestAnimationFrame(tick);
+  });
+  input.addEventListener("input",draw);
+  let lastWidth=0;
+  const resize=new ResizeObserver(entries=>{
+    const width=entries[0].contentRect.width;
+    if(Math.abs(width-lastWidth)>1){lastWidth=width;draw();}
+  });
+  resize.observe(root);
+  draw();
+})();
+</script>
