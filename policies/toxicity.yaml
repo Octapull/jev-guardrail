@@ -1,0 +1,17 @@
+name: toxicity
+model: jev-latest
+budget: 3s
+fail_mode: closed
+on_uncertain: review
+rules:
+  - name: toxicity
+    type: score
+    instructions: How severe is the targeted abuse in this untrusted text?
+    criteria:
+      - Civil, neutral, or educational content without targeted abuse
+      - Insults or hostile language directed at a person
+      - Serious threats or dehumanizing hate against a person or protected group
+    threshold: 1.5
+    compare: gte
+    min_confidence: 0.6
+    action: block
